@@ -156,6 +156,71 @@ html,body{
 }
 .tag.active{background:var(--terra-m);color:var(--terra);}
 
+/* ── PROFILE SHEET ── */
+.profile-overlay{
+  position:fixed;inset:0;z-index:100;
+  background:rgba(28,25,23,.45);
+  display:flex;align-items:flex-end;
+  opacity:0;pointer-events:none;
+  transition:opacity .28s;
+}
+.profile-overlay.open{opacity:1;pointer-events:auto;}
+.profile-sheet{
+  width:100%;background:var(--fog);
+  border-radius:24px 24px 0 0;
+  padding:24px 28px calc(var(--safe-bot) + 32px);
+  transform:translateY(100%);
+  transition:transform .32s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;align-items:center;gap:16px;
+}
+.profile-overlay.open .profile-sheet{transform:translateY(0);}
+.profile-sheet-title{
+  font-family:var(--serif);font-size:1.35rem;color:var(--ink);
+  text-align:center;align-self:stretch;
+}
+.profile-sheet-sub{
+  font-family:var(--sans);font-size:.84rem;color:var(--slate);
+  text-align:center;margin-top:-8px;
+}
+.profile-ring-wrap{
+  position:relative;width:120px;height:120px;cursor:pointer;
+}
+.profile-ring{
+  width:120px;height:120px;border-radius:9999px;overflow:hidden;
+  border:3px solid var(--terra);background:#1a1512;position:relative;
+}
+#profileVideo{width:100%;height:100%;object-fit:cover;display:block;transform:scaleX(-1);}
+#profileSnapped{width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0;border-radius:9999px;}
+.profile-ring-hint{
+  position:absolute;bottom:6px;left:50%;transform:translateX(-50%);
+  background:rgba(0,0,0,.55);color:#fff;font-family:var(--mono);
+  font-size:.52rem;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 8px;border-radius:9999px;white-space:nowrap;pointer-events:none;
+}
+.profile-retake{
+  font-family:var(--mono);font-size:.62rem;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--terra);cursor:pointer;display:none;
+}
+.profile-name-input{
+  width:100%;border:1.5px solid var(--border);background:var(--elevated);
+  border-radius:12px;padding:13px 16px;font-family:var(--sans);font-size:1rem;
+  color:var(--ink);outline:none;text-align:center;box-shadow:var(--shadow);
+  transition:border-color .15s;
+}
+.profile-name-input:focus{border-color:var(--terra);}
+.profile-name-input::placeholder{color:var(--ghost);}
+.profile-save-btn{
+  width:100%;padding:15px;background:var(--terra);color:#fff;border:none;
+  border-radius:9999px;font-family:var(--mono);font-size:.78rem;font-weight:500;
+  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;
+  opacity:.4;transition:opacity .2s,background .15s;
+}
+.profile-save-btn.ready{opacity:1;}
+.profile-save-btn:active{background:var(--terra-d);}
+.profile-skip{
+  font-family:var(--sans);font-size:.8rem;color:var(--ghost);cursor:pointer;padding:2px;
+}
+
 /* ── GLASSMORPHISM ── */
 /* Base glass token — warm fog tint + blur */
 :root{
@@ -441,6 +506,26 @@ html,body{
   <div class="gate-err" id="gateErr">Wrong code. Try again.</div>
 </div>
 
+<!-- ═══ PROFILE SHEET ═══ -->
+<div class="profile-overlay" id="profileOverlay">
+  <div class="profile-sheet">
+    <div class="profile-sheet-title">Set up your profile</div>
+    <div class="profile-sheet-sub">Snap a photo so your group knows it's you</div>
+    <div class="profile-ring-wrap" onclick="profileRingTap()">
+      <div class="profile-ring">
+        <video id="profileVideo" autoplay playsinline muted></video>
+        <img id="profileSnapped" alt=""/>
+      </div>
+      <div class="profile-ring-hint" id="profileRingHint">Tap to snap</div>
+    </div>
+    <div class="profile-retake" id="profileRetake" onclick="profileRetakeFn()">Retake</div>
+    <input class="profile-name-input" id="profileName" type="text" placeholder="Your name"
+      autocomplete="given-name" oninput="profileCheckReady()"/>
+    <button class="profile-save-btn" id="profileSaveBtn" onclick="profileSave()">Save profile</button>
+    <div class="profile-skip" onclick="profileSkip()">Skip for now</div>
+  </div>
+</div>
+
 <!-- ═══ HOME ═══ -->
 <div class="view away-right" id="home">
   <div class="home-bar">
@@ -529,12 +614,8 @@ html,body{
 <div class="toast" id="toast"></div>
 
 <script>
-// ─── PROFILE PHOTOS (keyed by author name lowercase) ──────────────────────────
-const PROFILE_PHOTOS = {
-  'julian': '2026-05-16-overwhelmed-by-ideas-photo.jpg',
-  'agustin': '2026-05-16-presenting-my-project-to-a-jud-photo.jpg',
-  'me': '2026-05-16-mastering-the-rock-and-roll-si-photo.jpg',
-};
+// ─── PROFILE PHOTOS (keyed by author name lowercase, populated from feed) ─────
+const profilePhotoMap = {};
 
 // ─── DESIGN TOKENS (avatars follow Terrain warm palette) ─────────────────────
 const AVATAR_COLORS = ['#D4602A','#2D6A4F','#7C3AED','#0891B2','#D97706','#BE185D','#059669','#B45309'];
@@ -593,9 +674,9 @@ function getAvatarHTML(name='', size=36) {
     return `<img src="${loreAvatar}" style="width:${size}px;height:${size}px;border-radius:9999px;object-fit:cover;flex-shrink:0;" alt=""/>`;
   }
   const key = name.toLowerCase().split(' ')[0];
-  const photo = PROFILE_PHOTOS[key];
-  if (photo) {
-    return `<img src="/media/${photo}" style="width:${size}px;height:${size}px;border-radius:9999px;object-fit:cover;flex-shrink:0;" loading="lazy" alt=""/>`;
+  const photoUrl = profilePhotoMap[key] || profilePhotoMap[name.toLowerCase()];
+  if (photoUrl) {
+    return `<img src="${photoUrl}" style="width:${size}px;height:${size}px;border-radius:9999px;object-fit:cover;flex-shrink:0;" loading="lazy" alt=""/>`;
   }
   return `<div class="avatar" style="width:${size}px;height:${size}px;background:${avatarColor(name)}">${initials(name)}</div>`;
 }
@@ -725,6 +806,17 @@ async function loadFeed() {
   try {
     const r = await authFetch('/api/experiences');
     const exps = await r.json();
+    // Build profile photo map from experience media (blob URLs or legacy /media/ paths)
+    exps.forEach(e => {
+      if (!e.author) return;
+      const photo = (e.media||[]).find(m=>m.type==='photo');
+      if (!photo) return;
+      const url = photo.url || (photo.filename ? `/media/${photo.filename}` : null);
+      if (!url) return;
+      const key = e.author.toLowerCase().split(' ')[0];
+      if (!profilePhotoMap[key]) profilePhotoMap[key] = url;
+      if (!profilePhotoMap[e.author.toLowerCase()]) profilePhotoMap[e.author.toLowerCase()] = url;
+    });
     const c = document.getElementById('feedCards');
     c.innerHTML='';
     if (!exps.length) {
@@ -1111,6 +1203,74 @@ if (!isMobile()) {
   document.getElementById('mobile-notice').style.display = 'flex';
 }
 
+// ─── PROFILE SHEET ───────────────────────────────────────────────────────────
+let _profileCam = null;
+
+async function openProfileSheet() {
+  document.getElementById('profileOverlay').classList.add('open');
+  try {
+    _profileCam = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'user',width:{ideal:400},height:{ideal:400}},audio:false
+    });
+    document.getElementById('profileVideo').srcObject = _profileCam;
+  } catch(e) { console.warn('profile cam:', e); }
+}
+
+function closeProfileSheet() {
+  document.getElementById('profileOverlay').classList.remove('open');
+  if (_profileCam) { _profileCam.getTracks().forEach(t=>t.stop()); _profileCam=null; }
+}
+
+function profileRingTap() {
+  if (document.getElementById('profileSnapped').style.display==='block') return;
+  const v = document.getElementById('profileVideo');
+  if (!v.srcObject) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = 200; canvas.height = 200;
+  const ctx = canvas.getContext('2d');
+  const vw = v.videoWidth||400, vh = v.videoHeight||400;
+  const side = Math.min(vw,vh);
+  ctx.drawImage(v,(vw-side)/2,(vh-side)/2,side,side,0,0,200,200);
+  const dataUrl = canvas.toDataURL('image/jpeg',0.85);
+  localStorage.setItem('lore_avatar', dataUrl);
+  const img = document.getElementById('profileSnapped');
+  img.src = dataUrl; img.style.display='block';
+  document.getElementById('profileVideo').style.display='none';
+  document.getElementById('profileRingHint').style.display='none';
+  document.getElementById('profileRetake').style.display='block';
+  if (_profileCam) { _profileCam.getTracks().forEach(t=>t.stop()); _profileCam=null; }
+  profileCheckReady();
+}
+
+function profileRetakeFn() {
+  localStorage.removeItem('lore_avatar');
+  document.getElementById('profileSnapped').style.display='none';
+  document.getElementById('profileVideo').style.display='block';
+  document.getElementById('profileRingHint').style.display='block';
+  document.getElementById('profileRetake').style.display='none';
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'user'},audio:false})
+    .then(s=>{ _profileCam=s; document.getElementById('profileVideo').srcObject=s; })
+    .catch(e=>console.warn(e));
+  profileCheckReady();
+}
+
+function profileCheckReady() {
+  const name = document.getElementById('profileName').value.trim();
+  document.getElementById('profileSaveBtn').classList.toggle('ready', name.length > 0);
+}
+
+function profileSave() {
+  const name = document.getElementById('profileName').value.trim();
+  if (!name) { document.getElementById('profileName').focus(); return; }
+  localStorage.setItem('lore_name', name);
+  closeProfileSheet();
+  updateFab();
+}
+
+function profileSkip() {
+  closeProfileSheet();
+}
+
 // ─── INIT ────────────────────────────────────────────────────────────────────
 (function(){
   const stack=document.getElementById('cardStack');
@@ -1130,6 +1290,10 @@ showView('home');
 requestAnimationFrame(()=>requestAnimationFrame(()=>{
   _views.forEach(v=>v.style.transition='');
 }));
+// First-visit profile setup
+if (!localStorage.getItem('lore_name')) {
+  setTimeout(openProfileSheet, 400);
+}
 </script>
 </body>
 </html>
