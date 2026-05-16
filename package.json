@@ -1,0 +1,20 @@
+{
+  "name": "lore",
+  "module": "src/server.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run --env-file=.env src/server.ts",
+    "start": "bun run --env-file=.env src/server.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
+    "@vercel/blob": "^2.3.3"
+  }
+}
