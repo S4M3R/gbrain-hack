@@ -121,6 +121,7 @@ async function handleRequest(req: Request): Promise<Response> {
     const author = (formData.get("author") as string) || "you";
     const title = (formData.get("title") as string) || "Untitled";
     const body = (formData.get("body") as string) || "";
+    const prompt = (formData.get("prompt") as string) || undefined;
     const location = (formData.get("location") as string) || "";
     const lat = parseFloat(formData.get("lat") as string) || undefined;
     const lng = parseFloat(formData.get("lng") as string) || undefined;
@@ -168,7 +169,7 @@ async function handleRequest(req: Request): Promise<Response> {
       }
     }
 
-    const filepath = writeExperience({ slug, author, date, location, lat, lng, tags, media, title, body });
+    const filepath = writeExperience({ slug, author, date, location, lat, lng, tags, media, title, body, prompt });
     importAndEmbed(filepath).catch(console.error);
     return Response.json({ ok: true, slug }, { headers: cors });
   }

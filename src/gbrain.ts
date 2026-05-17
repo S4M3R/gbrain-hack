@@ -27,6 +27,7 @@ export interface Experience {
   media: MediaItem[];
   title: string;
   body: string;
+  prompt?: string;
 }
 
 export interface SearchChunk {
@@ -62,6 +63,7 @@ author: ${exp.author}
 date: ${exp.date}
 location: ${exp.location || "Unknown"}${exp.lat ? `\nlat: ${exp.lat}` : ""}${exp.lng ? `\nlng: ${exp.lng}` : ""}
 tags: [${exp.tags.join(", ")}]
+${exp.prompt ? `prompt: ${exp.prompt.replace(/\n/g, " ")}` : ""}
 ${exp.media.length > 0 ? `media:\n${mediaYaml}` : "media: []"}
 ---
 
@@ -94,6 +96,31 @@ export async function importAndEmbed(filepath: string): Promise<void> {
   }
 }
 
+async function runGbrainSearch(query: string, env: NodeJS.ProcessEnv): Promise<SearchChunk[]> {
+  const { stdout, stderr } = await execFileAsync(
+    GBRAIN_BIN,
+    ["search", query, "--limit", "10"],
+    { timeout: 15000, env }
+  );
+  const cleanText = (stdout + stderr)
+    .split("\n")
+    .filter((l) => !l.startsWith("[ai.gateway]") && !l.startsWith("[embed"))
+    .join("\n");
+  const blocks = cleanText.split(/(?=\[[\d.]+\]\s+\S+\s+--)/);
+  return blocks
+    .map((block) => {
+      const m = block.match(/^\[([\d.]+)\]\s+([^\s]+)\s+--\s+([\s\S]*)/);
+      if (!m) return null;
+      return {
+        slug: m[2],
+        path: m[2],
+        chunk: m[3].trim().slice(0, 1000),
+        score: parseFloat(m[1]),
+      };
+    })
+    .filter(Boolean) as SearchChunk[];
+}
+
 export async function searchExperiences(query: string): Promise<SearchChunk[]> {
   const env = {
     ...process.env,
@@ -101,28 +128,31 @@ export async function searchExperiences(query: string): Promise<SearchChunk[]> {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   };
   try {
-    const { stdout, stderr } = await execFileAsync(
-      GBRAIN_BIN,
-      ["search", query, "--limit", "10"],
-      { timeout: 15000, env }
-    );
-    const cleanText = (stdout + stderr)
-      .split("\n")
-      .filter((l) => !l.startsWith("[ai.gateway]") && !l.startsWith("[embed"))
-      .join("\n");
-    const blocks = cleanText.split(/(?=\[[\d.]+\]\s+\S+\s+--)/);
-    return blocks
-      .map((block) => {
-        const m = block.match(/^\[([\d.]+)\]\s+([^\s]+)\s+--\s+([\s\S]*)/);
-        if (!m) return null;
-        return {
-          slug: m[2],
-          path: m[2],
-          chunk: m[3].trim().slice(0, 1000),
-          score: parseFloat(m[1]),
-        };
-      })
-      .filter(Boolean) as SearchChunk[];
+    const results = await runGbrainSearch(query, env);
+    if (results.length > 0) return results;
+
+    // Fallback: try each word individually and merge, deduped by slug
+    const words = query.split(/\s+/).filter((w) => w.length > 2);
+    if (words.length <= 1) return results;
+
+    const seen = new Set<string>();
+    const merged: SearchChunk[] = [];
+    await Promise.all(
+      words.map((word) =>
+        runGbrainSearch(word, env).catch(() => [] as SearchChunk[])
+      )
+    ).then((all) => {
+      for (const batch of all) {
+        for (const r of batch) {
+          if (!seen.has(r.slug)) {
+            seen.add(r.slug);
+            merged.push(r);
+          }
+        }
+      }
+    });
+
+    return merged.sort((a, b) => b.score - a.score).slice(0, 10);
   } catch (e) {
     console.error("gbrain search error:", e);
     return [];
@@ -185,6 +215,7 @@ function parseExperiencePage(filename: string, content: string): Experience {
     media,
     title: titleMatch ? titleMatch[1] : filename,
     body: body.replace(/^#\s+.+\n/, "").trim(),
+    prompt: get("prompt") || undefined,
   };
 }
 

@@ -587,6 +587,7 @@ html,body{
 <div class="view away-right" id="home">
   <div class="home-bar">
     <div class="logo-type">Lore</div>
+    <span style="font-family:var(--mono);font-size:.58rem;color:var(--ghost);letter-spacing:.04em;margin-left:7px;margin-top:6px;flex-shrink:0;">the #1st gbrain social media</span>
     <div style="flex:1"></div>
     <div id="loreCountWrap" style="display:none;align-items:center;gap:8px;margin-right:10px;">
       <span id="loreCount" style="font-family:var(--mono);font-size:.72rem;font-weight:600;color:var(--ghost);letter-spacing:.04em;"></span>
@@ -1261,6 +1262,7 @@ async function saveCapture() {
   btn.innerHTML='<span class="spinner"></span> Saving…';
   const fd=new FormData();
   fd.append('author',localStorage.getItem('lore_name')||'me');
+  fd.append('prompt',prompt);
   fd.append('title',title);fd.append('body',body);
   fd.append('location',loc.text);
   if(loc.lat)fd.append('lat',loc.lat);
