@@ -14,29 +14,24 @@ import { uploadMedia, validateMedia } from "./blob";
 
 const PORT = parseInt(process.env.PORT || "3456");
 const PUBLIC_DIR = path.join(import.meta.dir, "..", "public");
-const LORE_TOKEN = process.env.LORE_TOKEN || "";
-
+const EXPERIENCES_DIR = path.join(process.env.BRAIN_DIR || path.join(os.homedir(), "brain"), "experiences");
+const LIKES_FILE = path.join(EXPERIENCES_DIR, "likes.json");
 ensureExperiencesDir();
+
+// ── Likes persistence ─────────────────────────────────────────────────────────
+function readLikes(): Record<string, number> {
+  try { return JSON.parse(fs.readFileSync(LIKES_FILE, "utf-8")); } catch { return {}; }
+}
+function writeLikes(likes: Record<string, number>) {
+  fs.writeFileSync(LIKES_FILE, JSON.stringify(likes));
+}
 
 // ── CORS headers ──────────────────────────────────────────────────────────────
 const cors = {
   "Access-Control-Allow-Origin": process.env.ALLOWED_ORIGIN || "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type",
 };
-
-// ── Auth ──────────────────────────────────────────────────────────────────────
-function requireAuth(req: Request): boolean {
-  if (!LORE_TOKEN) return true; // open if not configured
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader === `Bearer ${LORE_TOKEN}`) return true;
-  const url = new URL(req.url);
-  if (url.searchParams.get("token") === LORE_TOKEN) return true;
-  return false;
-}
-
-const unauthorized = () =>
-  Response.json({ error: "Unauthorized" }, { status: 401, headers: cors });
 
 // ── Rate limiting (in-memory per IP, resets every 60s) ───────────────────────
 const rateBuckets = new Map<string, { n: number; resetAt: number }>();
@@ -66,15 +61,8 @@ async function handleRequest(req: Request): Promise<Response> {
 
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
-  // ── Ping / health check (auth required — used by client to validate token) ──
-  if (url.pathname === "/api/ping" && req.method === "GET") {
-    if (!requireAuth(req)) return unauthorized();
-    return Response.json({ ok: true }, { headers: cors });
-  }
-
   // ── Legacy local media serving ────────────────────────────────────────────
   if (url.pathname.startsWith("/media/")) {
-    if (!requireAuth(req)) return unauthorized();
     const filename = path.basename(url.pathname.slice("/media/".length));
     const filepath = path.resolve(MEDIA_DIR, filename);
     // Guard path traversal
@@ -95,18 +83,36 @@ async function handleRequest(req: Request): Promise<Response> {
     });
   }
 
-  // ── All remaining API routes require auth + rate limit ────────────────────
+  // ── Rate limit all API routes ─────────────────────────────────────────────
   if (url.pathname.startsWith("/api/")) {
-    if (!requireAuth(req)) return unauthorized();
     if (!rateLimit(ip)) {
       return Response.json({ error: "Too many requests" }, { status: 429, headers: cors });
     }
   }
 
-  // ── List experiences ──────────────────────────────────────────────────────
+  // ── List experiences (sorted by likes desc, then date desc) ─────────────────
   if (url.pathname === "/api/experiences" && req.method === "GET") {
-    const exps = listExperiences().sort((a, b) => b.date.localeCompare(a.date));
-    return Response.json(exps, { headers: cors });
+    const likes = readLikes();
+    const exps = listExperiences().sort((a, b) => {
+      const ld = (likes[b.slug] || 0) - (likes[a.slug] || 0);
+      return ld !== 0 ? ld : b.date.localeCompare(a.date);
+    });
+    return Response.json(exps.map(e => ({ ...e, likes: likes[e.slug] || 0 })), { headers: cors });
+  }
+
+  // ── Get all like counts ───────────────────────────────────────────────────
+  if (url.pathname === "/api/likes" && req.method === "GET") {
+    return Response.json(readLikes(), { headers: cors });
+  }
+
+  // ── Toggle like ───────────────────────────────────────────────────────────
+  if (url.pathname === "/api/like" && req.method === "POST") {
+    const { slug, liked } = await req.json() as { slug: string; liked: boolean };
+    if (!slug) return Response.json({ error: "slug required" }, { status: 400, headers: cors });
+    const likes = readLikes();
+    likes[slug] = Math.max(0, (likes[slug] || 0) + (liked ? 1 : -1));
+    writeLikes(likes);
+    return Response.json({ slug, likes: likes[slug] }, { headers: cors });
   }
 
   // ── Capture (save experience) ─────────────────────────────────────────────
@@ -121,7 +127,7 @@ async function handleRequest(req: Request): Promise<Response> {
     const tagsRaw = (formData.get("tags") as string) || "";
     const tags = tagsRaw.split(",").map((t) => t.trim()).filter(Boolean);
     const date = new Date().toISOString().split("T")[0];
-    const slug = `${date}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`;
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
     const media: Array<{ type: "photo" | "video"; url?: string; filename?: string }> = [];
 
     const photoFile = formData.get("photo") as File | null;
@@ -213,5 +219,5 @@ async function handleRequest(req: Request): Promise<Response> {
   return new Response("Not found", { status: 404 });
 }
 
-Bun.serve({ port: PORT, fetch: handleRequest });
+Bun.serve({ port: PORT, hostname: "127.0.0.1", fetch: handleRequest });
 console.log(`Lore → http://localhost:${PORT}`);
