@@ -614,6 +614,11 @@ html,body{
 <div class="toast" id="toast"></div>
 
 <script>
+// ─── HTML ESCAPE (prevent XSS in innerHTML templates) ────────────────────────
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 // ─── PROFILE PHOTOS (keyed by author name lowercase, populated from feed) ─────
 const profilePhotoMap = {};
 
@@ -688,7 +693,7 @@ function fmtDate(d) {
 
 // ─── STATE ───────────────────────────────────────────────────────────────────
 let cards=[], cardIdx=0, photoBlob=null;
-let camStream=null, facingMode='environment';
+let camStream=null, facingMode='user';
 let loc={lat:null,lng:null,text:'Unknown location'};
 
 function stripMd(text) {
@@ -773,11 +778,11 @@ function renderFeedCard(exp) {
   const color = avatarColor(exp.author);
   let visual = '';
   if (hasPhoto) {
-    const photoSrc = hasPhoto.url || `/media/${hasPhoto.filename}`;
+    const photoSrc = esc(hasPhoto.url || `/media/${hasPhoto.filename}`);
     visual = `<img class="xcard-photo" src="${photoSrc}"
       onerror="this.outerHTML='<div class=\\'xcard-placeholder ${grad}\\'></div>'" loading="lazy"/>`;
   } else if (hasVideo) {
-    const videoSrc = hasVideo.url || `/media/${hasVideo.filename}`;
+    const videoSrc = esc(hasVideo.url || `/media/${hasVideo.filename}`);
     visual = `<video class="xcard-photo" src="${videoSrc}" muted loop autoplay playsinline></video>`;
   } else {
     visual = `<div class="xcard-placeholder ${grad}">${getIcon(exp.tags,48)}</div>`;
@@ -792,12 +797,12 @@ function renderFeedCard(exp) {
       <div class="xcard-author-row">
         ${getAvatarHTML(exp.author, 36)}
         <div class="author-info">
-          <div class="author-name">${exp.author||'Unknown'}</div>
-          <div class="author-meta">${fmtDate(exp.date)} · ${exp.location||''}</div>
+          <div class="author-name">${esc(exp.author)||'Unknown'}</div>
+          <div class="author-meta">${esc(fmtDate(exp.date))} · ${esc(exp.location||'')}</div>
         </div>
       </div>
-      <div class="xcard-title">${exp.title||'Experience'}</div>
-      <div class="xcard-body-text">${stripMd(exp.body)?.slice(0,200)||''}…</div>
+      <div class="xcard-title">${esc(exp.title||'Experience')}</div>
+      <div class="xcard-body-text">${esc(stripMd(exp.body)?.slice(0,200)||'')}…</div>
     </div>`;
   return div;
 }
@@ -882,11 +887,11 @@ function makeCard(i) {
 
   if (card.type==='synth') {
     const bullets=(card.synthesis.insights||[])
-      .map(s=>`<div class="synth-bullet">${s}</div>`).join('');
+      .map(s=>`<div class="synth-bullet">${esc(s)}</div>`).join('');
     el.innerHTML=`<div class="synth-inner">
       <div class="synth-eyebrow">✦ Group Wisdom · ZeroEntropy zerank-2</div>
       <div class="synth-hed">What your group knows</div>
-      <div class="synth-body">${card.synthesis.summary}</div>
+      <div class="synth-body">${esc(card.synthesis.summary)}</div>
       ${bullets?`<div class="synth-bullets">${bullets}</div>`:''}
     </div>
     <div class="synth-source">Powered by ZeroEntropy zerank-2 + OpenAI · GBrain</div>`;
@@ -900,10 +905,10 @@ function makeCard(i) {
 
     let vis='';
     if (hasPhoto) {
-      const src = hasPhoto.url || `/media/${hasPhoto.filename}`;
+      const src = esc(hasPhoto.url || `/media/${hasPhoto.filename}`);
       vis=`<img class="exp-rcard-photo" src="${src}" onerror="this.outerHTML='<div class=\\'exp-rcard-placeholder ${grad}\\'></div>'" />`;
     } else if (hasVideo) {
-      const src = hasVideo.url || `/media/${hasVideo.filename}`;
+      const src = esc(hasVideo.url || `/media/${hasVideo.filename}`);
       vis=`<video class="exp-rcard-photo" src="${src}" muted loop autoplay playsinline></video>`;
     }
     else vis=`<div class="exp-rcard-placeholder ${grad}">${getIcon(exp.tags,52)}</div>`;
@@ -913,12 +918,12 @@ function makeCard(i) {
       <div class="exp-rcard-author">
         ${getAvatarHTML(exp.author, 36)}
         <div>
-          <div class="author-name">${exp.author||'Unknown'}</div>
-          <div class="author-meta">${fmtDate(exp.date)} · ${exp.location||''}</div>
+          <div class="author-name">${esc(exp.author||'Unknown')}</div>
+          <div class="author-meta">${esc(fmtDate(exp.date))} · ${esc(exp.location||'')}</div>
         </div>
       </div>
-      <div class="exp-rcard-title">${exp.title||'Experience'}</div>
-      <div class="exp-rcard-text">${stripMd(exp.body||card.chunk||'').slice(0,400)}</div>
+      <div class="exp-rcard-title">${esc(exp.title||'Experience')}</div>
+      <div class="exp-rcard-text">${esc(stripMd(exp.body||card.chunk||'').slice(0,400))}</div>
     </div>`;
 
   } else if (card.type==='cta') {
@@ -1035,7 +1040,9 @@ async function startCam() {
     camStream=await navigator.mediaDevices.getUserMedia({
       video:{facingMode,width:{ideal:1280},height:{ideal:960}},audio:false
     });
-    document.getElementById('camVideo').srcObject=camStream;
+    const vid=document.getElementById('camVideo');
+    vid.srcObject=camStream;
+    vid.style.transform=facingMode==='user'?'scaleX(-1)':'';
   } catch(e) {
     console.error('cam:',e);
     document.getElementById('camVideo').style.display='none';
@@ -1050,8 +1057,11 @@ function stopCam() {
 function snapPhoto() {
   const v=document.getElementById('camVideo');
   const canvas=document.createElement('canvas');
-  canvas.width=v.videoWidth||1280;canvas.height=v.videoHeight||960;
-  canvas.getContext('2d').drawImage(v,0,0);
+  const cw=v.videoWidth||1280,ch=v.videoHeight||960;
+  canvas.width=cw;canvas.height=ch;
+  const ctx=canvas.getContext('2d');
+  if(facingMode==='user'){ctx.translate(cw,0);ctx.scale(-1,1);}
+  ctx.drawImage(v,0,0);
   canvas.toBlob(blob=>{
     photoBlob=blob;
     const img=document.getElementById('capPhoto');
@@ -1078,7 +1088,7 @@ function retake() {
 
 function flipCam() {
   facingMode=facingMode==='environment'?'user':'environment';
-  startCam();
+  startCam(); // startCam sets the mirror transform
 }
 
 function closeCapture() { stopCam(); goHome(); }
