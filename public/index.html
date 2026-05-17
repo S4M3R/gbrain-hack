@@ -127,6 +127,20 @@ html,body{
   margin-bottom:12px;
 }
 .tags-row{display:flex;gap:6px;flex-wrap:wrap;}
+.xcard-actions{
+  display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;
+  border-top:1px solid var(--border);
+}
+.xcard-action{
+  display:flex;align-items:center;gap:5px;
+  background:none;border:none;cursor:pointer;padding:4px 8px;
+  border-radius:8px;font-family:var(--sans);font-size:.8rem;
+  color:var(--ghost);transition:color .15s,background .15s;
+}
+.xcard-action:hover{background:var(--fog);color:var(--slate);}
+.xcard-action.liked{color:var(--terra);}
+.xcard-action svg{flex-shrink:0;}
+.xcard-spacer{flex:1;}
 .tag{
   background:var(--fog);color:var(--slate);border-radius:8px;
   padding:4px 10px;font-family:var(--sans);font-size:.75rem;
@@ -177,6 +191,20 @@ html,body{
 .profile-save-btn:active{background:var(--terra-d);}
 .profile-skip{
   font-family:var(--sans);font-size:.8rem;color:var(--ghost);cursor:pointer;padding:2px;
+}
+.profile-avatar-wrap{
+  position:relative;width:88px;height:88px;cursor:pointer;flex-shrink:0;
+}
+.profile-avatar-img{
+  width:88px;height:88px;border-radius:9999px;object-fit:cover;
+  border:3px solid var(--terra);display:block;
+}
+.profile-avatar-remove{
+  position:absolute;top:0;right:0;
+  width:24px;height:24px;border-radius:9999px;
+  background:var(--ink);border:2px solid var(--fog);
+  color:#fff;font-size:.7rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
 }
 
 /* ── GLASSMORPHISM ── */
@@ -539,12 +567,19 @@ html,body{
 <!-- ═══ PROFILE SHEET ═══ -->
 <div class="profile-overlay" id="profileOverlay">
   <div class="profile-sheet">
-    <div class="profile-sheet-title">What's your name?</div>
-    <div class="profile-sheet-sub">So your group knows who's sharing</div>
+    <div class="profile-sheet-title">Your profile</div>
+    <div id="profileAvatarSection" style="display:none;">
+      <div class="profile-avatar-wrap">
+        <img class="profile-avatar-img" id="profileSheetImg" alt=""/>
+        <div class="profile-avatar-remove" onclick="profileRemovePhoto()" title="Remove photo">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+        </div>
+      </div>
+    </div>
     <input class="profile-name-input" id="profileName" type="text" placeholder="Your name"
       autocomplete="given-name" oninput="profileCheckReady()"/>
-    <button class="profile-save-btn" id="profileSaveBtn" onclick="profileSave()">Let's go</button>
-    <div class="profile-skip" onclick="profileSkip()">Skip for now</div>
+    <button class="profile-save-btn" id="profileSaveBtn" onclick="profileSave()">Save</button>
+    <div class="profile-skip" onclick="profileSkip()">Done</div>
   </div>
 </div>
 
@@ -656,6 +691,8 @@ function esc(s) {
 
 // ─── PROFILE PHOTOS (keyed by author name lowercase, populated from feed) ─────
 const profilePhotoMap = {};
+// ─── LIKES (persisted in localStorage as a Set of liked slugs) ───────────────
+const likedSlugs = new Set(JSON.parse(localStorage.getItem('lore_liked')||'[]'));
 
 // ─── DESIGN TOKENS (avatars follow Terrain warm palette) ─────────────────────
 const AVATAR_COLORS = ['#D4602A','#2D6A4F','#7C3AED','#0891B2','#D97706','#BE185D','#059669','#B45309'];
@@ -708,10 +745,10 @@ function avatarColor(name='') {
 }
 function initials(name='') { return (name||'?')[0].toUpperCase(); }
 function getAvatarHTML(name='', size=36) {
-  const loreAvatar = localStorage.getItem('lore_avatar');
-  const loreName = (localStorage.getItem('lore_name')||'').toLowerCase();
-  if (loreName && name && loreName === name.toLowerCase() && loreAvatar) {
-    return `<img src="${loreAvatar}" style="width:${size}px;height:${size}px;border-radius:9999px;object-fit:cover;flex-shrink:0;" alt=""/>`;
+  const key = name.toLowerCase().split(' ')[0];
+  const photoUrl = profilePhotoMap[key] || profilePhotoMap[name.toLowerCase()];
+  if (photoUrl) {
+    return `<img src="${photoUrl}" style="width:${size}px;height:${size}px;border-radius:9999px;object-fit:cover;flex-shrink:0;" loading="lazy" alt=""/>`;
   }
   return `<div class="avatar" style="width:${size}px;height:${size}px;background:${avatarColor(name)}">${initials(name)}</div>`;
 }
@@ -773,6 +810,9 @@ function renderFeedCard(exp) {
     visual = `<div class="xcard-placeholder ${grad}">${getIcon(exp.tags,48)}</div>`;
   }
 
+  const liked = likedSlugs.has(exp.slug);
+  const likeCount = exp.likes || 0;
+
   const div = document.createElement('div');
   div.className='xcard';
   div.onclick=()=>openSingleExp(exp);
@@ -788,6 +828,17 @@ function renderFeedCard(exp) {
       </div>
       <div class="xcard-title">${esc(exp.title||'Experience')}</div>
       <div class="xcard-body-text">${esc(stripMd(exp.body)?.slice(0,200)||'')}…</div>
+      <div class="xcard-actions">
+        <button class="xcard-action${liked?' liked':''}" data-slug="${esc(exp.slug)}" onclick="event.stopPropagation();toggleLike(this,'${esc(exp.slug)}')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="${liked?'currentColor':'none'}" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"/></svg>
+          <span id="lc-${esc(exp.slug)}">${likeCount > 0 ? likeCount : ''}</span>
+        </button>
+        <div class="xcard-spacer"></div>
+        <button class="xcard-action" onclick="event.stopPropagation();shareLore('${esc(exp.slug)}','${esc(exp.title||'Experience')}','${esc(exp.author||'')}')">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.935-2.186 2.25 2.25 0 0 0-3.935 2.186Z"/></svg>
+          Share
+        </button>
+      </div>
     </div>`;
   return div;
 }
@@ -812,6 +863,37 @@ async function loadFeed() {
     }
     exps.forEach(e=>c.appendChild(renderFeedCard(e)));
   } catch { document.getElementById('feedCards').innerHTML=''; }
+}
+
+// ─── LIKES ───────────────────────────────────────────────────────────────────
+async function toggleLike(btn, slug) {
+  const nowLiked = !likedSlugs.has(slug);
+  if (nowLiked) likedSlugs.add(slug); else likedSlugs.delete(slug);
+  localStorage.setItem('lore_liked', JSON.stringify([...likedSlugs]));
+  btn.classList.toggle('liked', nowLiked);
+  const heart = btn.querySelector('svg');
+  if (heart) heart.setAttribute('fill', nowLiked ? 'currentColor' : 'none');
+  try {
+    const r = await fetch('/api/like', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ slug, liked: nowLiked })
+    });
+    const data = await r.json();
+    const countEl = document.getElementById(`lc-${slug}`);
+    if (countEl) countEl.textContent = data.likes > 0 ? data.likes : '';
+  } catch {}
+}
+
+// ─── SHARE ───────────────────────────────────────────────────────────────────
+async function shareLore(slug, title, author) {
+  const shareUrl = `${location.origin}${location.pathname}?lore=${encodeURIComponent(slug)}`;
+  const text = `"${title}" by ${author}`;
+  if (navigator.share) {
+    try { await navigator.share({ title, text, url: shareUrl }); return; } catch {}
+  }
+  try { await navigator.clipboard.writeText(shareUrl); toast('Link copied!'); } catch {
+    toast(shareUrl);
+  }
 }
 
 // ─── SEARCH ──────────────────────────────────────────────────────────────────
@@ -1204,19 +1286,11 @@ function toast(msg) {
 // ─── FAB & AVATAR ─────────────────────────────────────────────────────────────
 function updateFab() {
   const name = localStorage.getItem('lore_name') || '';
-  const avatar = localStorage.getItem('lore_avatar') || '';
   const inner = document.getElementById('fabInner');
-  if (inner) {
-    inner.innerHTML = getAvatarHTML(name, 54);
-    const el = inner.firstElementChild;
-    if (el) { el.style.width='100%'; el.style.height='100%'; el.style.borderRadius='0'; }
-  }
-  const topAvatar = document.getElementById('homeUserAvatar');
-  const topImg = document.getElementById('homeUserAvatarImg');
-  if (topAvatar && topImg) {
-    if (avatar) { topImg.src = avatar; topAvatar.style.display = 'block'; }
-    else { topAvatar.style.display = 'none'; }
-  }
+  if (!inner) return;
+  inner.innerHTML = getAvatarHTML(name, 54);
+  const el = inner.firstElementChild;
+  if (el) { el.style.width='100%'; el.style.height='100%'; el.style.borderRadius='0'; }
 }
 
 // ─── MOBILE NOTICE ───────────────────────────────────────────────────────────
@@ -1255,8 +1329,22 @@ if (!isMobile()) {
 
 // ─── PROFILE SHEET ───────────────────────────────────────────────────────────
 function openProfileSheet() {
+  const avatar = localStorage.getItem('lore_avatar') || '';
+  const name = localStorage.getItem('lore_name') || '';
+  const avatarSection = document.getElementById('profileAvatarSection');
+  const avatarImg = document.getElementById('profileSheetImg');
+  if (avatar) {
+    avatarImg.src = avatar;
+    avatarSection.style.display = 'flex';
+    avatarSection.style.justifyContent = 'center';
+  } else {
+    avatarSection.style.display = 'none';
+  }
+  const nameInput = document.getElementById('profileName');
+  if (name) nameInput.value = name;
+  profileCheckReady();
   document.getElementById('profileOverlay').classList.add('open');
-  setTimeout(()=>document.getElementById('profileName')?.focus(), 100);
+  setTimeout(() => nameInput.focus(), 100);
 }
 
 function closeProfileSheet() {
@@ -1266,6 +1354,12 @@ function closeProfileSheet() {
 function profileCheckReady() {
   const name = document.getElementById('profileName').value.trim();
   document.getElementById('profileSaveBtn').classList.toggle('ready', name.length > 0);
+}
+
+function profileRemovePhoto() {
+  localStorage.removeItem('lore_avatar');
+  document.getElementById('profileAvatarSection').style.display = 'none';
+  updateFab();
 }
 
 function profileSave() {
@@ -1299,6 +1393,19 @@ showView('home');
 requestAnimationFrame(()=>requestAnimationFrame(()=>{
   _views.forEach(v=>v.style.transition='');
 }));
+// Open shared lore from URL param
+(async () => {
+  const loreSlug = new URLSearchParams(location.search).get('lore');
+  if (loreSlug) {
+    try {
+      const r = await fetch('/api/experiences');
+      const exps = await r.json();
+      const exp = exps.find(e => e.slug === loreSlug);
+      if (exp) { setTimeout(()=>openSingleExp(exp), 80); }
+    } catch {}
+    history.replaceState(null,'',location.pathname);
+  }
+})();
 // First-visit profile setup
 if (!localStorage.getItem('lore_name')) {
   setTimeout(openProfileSheet, 400);
