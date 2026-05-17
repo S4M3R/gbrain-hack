@@ -40,29 +40,6 @@ html,body{
 .view.away-left{transform:translateX(-100%)}
 .view.away-right{transform:translateX(100%)}
 
-/* ── AUTH GATE ── */
-#gate{align-items:center;justify-content:center;padding:48px 32px;}
-.gate-logo{font-family:var(--serif);font-size:2.4rem;color:var(--ink);text-align:center;margin-bottom:6px;}
-.gate-sub{font-family:var(--sans);font-size:.88rem;color:var(--slate);text-align:center;margin-bottom:40px;line-height:1.5;}
-.gate-input{
-  width:100%;border:1.5px solid var(--border);background:var(--elevated);
-  border-radius:12px;padding:14px 16px;font-family:var(--mono);font-size:.95rem;
-  color:var(--ink);outline:none;text-align:center;margin-bottom:14px;
-  box-shadow:var(--shadow);transition:border-color .15s;letter-spacing:.04em;
-}
-.gate-input:focus{border-color:var(--terra);}
-.gate-input::placeholder{color:var(--ghost);letter-spacing:0;}
-.gate-btn{
-  width:100%;padding:16px;background:var(--terra);color:#fff;border:none;
-  border-radius:9999px;font-family:var(--mono);font-size:.78rem;font-weight:500;
-  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;transition:background .15s;
-}
-.gate-btn:active{background:var(--terra-d);}
-.gate-err{
-  text-align:center;font-family:var(--sans);font-size:.82rem;
-  color:var(--terra-d);margin-top:12px;display:none;
-}
-
 /* ── HOME ── */
 .home-bar{
   padding:calc(var(--safe-top) + 14px) 20px 12px;
@@ -411,6 +388,22 @@ html,body{
   line-height:1.55;min-height:72px;
 }
 .prompt-ta::placeholder{color:var(--ghost)}
+.prompt-nudge{
+  display:none;padding:10px 20px 12px;
+  border-top:1px solid var(--border);background:var(--fog);
+}
+.nudge-msg{
+  font-family:var(--sans);font-size:.82rem;color:var(--slate);margin-bottom:8px;
+}
+.nudge-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.nudge-chip{
+  background:var(--elevated);border:1.5px solid var(--border);
+  border-radius:9999px;padding:6px 12px;
+  font-family:var(--sans);font-size:.78rem;color:var(--ink);
+  cursor:pointer;transition:border-color .15s,background .15s;
+  white-space:nowrap;
+}
+.nudge-chip:active{background:var(--terra-m);border-color:var(--terra);}
 .loc-bar{
   padding:10px 20px;display:flex;align-items:center;gap:6px;
   border-top:1px solid var(--border);background:var(--surface);
@@ -496,16 +489,6 @@ html,body{
 </head>
 <body>
 
-<!-- ═══ GATE (token auth) ═══ -->
-<div class="view" id="gate">
-  <div class="gate-logo">Lore</div>
-  <div class="gate-sub">Enter your access code to join the group.</div>
-  <input class="gate-input" id="gateInput" type="password" placeholder="Access code"
-    autocomplete="off" onkeydown="if(event.key==='Enter')gateSubmit()"/>
-  <button class="gate-btn" onclick="gateSubmit()">Enter Lore</button>
-  <div class="gate-err" id="gateErr">Wrong code. Try again.</div>
-</div>
-
 <!-- ═══ PROFILE SHEET ═══ -->
 <div class="profile-overlay" id="profileOverlay">
   <div class="profile-sheet">
@@ -587,7 +570,19 @@ html,body{
     <div class="prompt-inner">
       <div class="prompt-lbl">What happened?</div>
       <textarea class="prompt-ta" id="promptTa" rows="3"
-        placeholder="Type casually. AI writes the full memory for you."></textarea>
+        placeholder="Type casually. AI writes the full memory for you."
+        oninput="onPromptInput()"></textarea>
+    </div>
+    <div class="prompt-nudge" id="promptNudge">
+      <div class="nudge-msg">Add a few words — what was this moment about?</div>
+      <div class="nudge-chips">
+        <div class="nudge-chip" onclick="useIdea(this)">Who was there</div>
+        <div class="nudge-chip" onclick="useIdea(this)">What we ate</div>
+        <div class="nudge-chip" onclick="useIdea(this)">How it felt</div>
+        <div class="nudge-chip" onclick="useIdea(this)">Where we were</div>
+        <div class="nudge-chip" onclick="useIdea(this)">What we did</div>
+        <div class="nudge-chip" onclick="useIdea(this)">Why it mattered</div>
+      </div>
     </div>
     <div class="loc-bar">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="14" height="14" style="flex-shrink:0;color:var(--ghost)"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z"/></svg>
@@ -710,55 +705,10 @@ function stripMd(text) {
     .trim();
 }
 
-// ─── AUTH ────────────────────────────────────────────────────────────────────
-let _token = localStorage.getItem('lore_token') || '';
-
-async function authFetch(input, init = {}) {
-  const headers = { ...(init.headers || {}), 'Authorization': `Bearer ${_token}` };
-  const res = await fetch(input, { ...init, headers });
-  if (res.status === 401) { showGate(); return res; }
-  return res;
-}
-
-async function gateSubmit() {
-  const input = document.getElementById('gateInput');
-  const candidate = input.value.trim();
-  if (!candidate) return;
-  const err = document.getElementById('gateErr');
-  err.style.display = 'none';
-  try {
-    const res = await fetch('/api/ping', {
-      headers: { 'Authorization': `Bearer ${candidate}` }
-    });
-    if (res.ok) {
-      _token = candidate;
-      localStorage.setItem('lore_token', candidate);
-      afterAuth();
-    } else {
-      err.style.display = 'block';
-      input.value = '';
-      input.focus();
-    }
-  } catch {
-    err.textContent = 'Could not reach server.';
-    err.style.display = 'block';
-  }
-}
-
-function showGate() {
-  _token = '';
-  localStorage.removeItem('lore_token');
-  showView('gate');
-  setTimeout(() => document.getElementById('gateInput')?.focus(), 80);
-}
-
-function afterAuth() {
-  showView('home');
-}
 
 // ─── NAV ─────────────────────────────────────────────────────────────────────
 function showView(id) {
-  const order=['gate','home','results','capture'];
+  const order=['home','results','capture'];
   order.forEach(v=>{
     const el=document.getElementById(v);
     if (!el) return;
@@ -809,7 +759,7 @@ function renderFeedCard(exp) {
 
 async function loadFeed() {
   try {
-    const r = await authFetch('/api/experiences');
+    const r = await fetch('/api/experiences');
     const exps = await r.json();
     // Build profile photo map from experience media (blob URLs or legacy /media/ paths)
     exps.forEach(e => {
@@ -843,7 +793,7 @@ async function doSearch() {
   document.getElementById('dots').innerHTML='';
 
   try {
-    const r = await authFetch(`/api/query?q=${encodeURIComponent(q)}`);
+    const r = await fetch(`/api/query?q=${encodeURIComponent(q)}`);
     const data = await r.json();
     buildResultCards(q, data);
   } catch {
@@ -1027,6 +977,7 @@ async function openCapture() {
   document.getElementById('shutterBtn').style.display='block';
   document.getElementById('flipBtn').style.display='flex';
   document.getElementById('promptTa').value='';
+  document.getElementById('promptNudge').style.display='none';
   document.getElementById('saveBtn').textContent='Save to Lore';
   document.getElementById('saveBtn').disabled=false;
   showView('capture');
@@ -1110,9 +1061,28 @@ async function detectLoc() {
   },()=>{document.getElementById('locTxt').textContent='Location unavailable';},{timeout:8000});
 }
 
+function onPromptInput() {
+  const hasText = document.getElementById('promptTa').value.trim().length > 0;
+  document.getElementById('promptNudge').style.display = 'none';
+  if (hasText) document.getElementById('promptNudge').style.display = 'none';
+}
+
+function useIdea(chip) {
+  const ta = document.getElementById('promptTa');
+  const cur = ta.value.trim();
+  ta.value = cur ? cur + ' — ' + chip.textContent.toLowerCase() : chip.textContent.toLowerCase() + '…';
+  ta.focus();
+  document.getElementById('promptNudge').style.display = 'none';
+}
+
 async function saveCapture() {
   const prompt=document.getElementById('promptTa').value.trim();
-  if (!prompt&&!photoBlob){toast('Add a note or take a photo');return;}
+  if (!prompt) {
+    document.getElementById('promptNudge').style.display = 'block';
+    document.getElementById('promptTa').focus();
+    return;
+  }
+  if (!photoBlob && !prompt){toast('Add a note or take a photo');return;}
 
   const btn=document.getElementById('saveBtn');
   btn.disabled=true;
@@ -1121,7 +1091,7 @@ async function saveCapture() {
   let title='New experience',body=prompt||'',tags=[];
   if (prompt) {
     try {
-      const r=await authFetch('/api/generate',{
+      const r=await fetch('/api/generate',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({prompt})
       });
@@ -1143,7 +1113,7 @@ async function saveCapture() {
   if(photoBlob)fd.append('photo',photoBlob,'photo.jpg');
 
   try {
-    const r=await authFetch('/api/capture',{method:'POST',body:fd});
+    const r=await fetch('/api/capture',{method:'POST',body:fd});
     const d=await r.json();
     if(d.ok){toast('Saved to Lore!');closeCapture();loadFeed();}
     else throw new Error();
