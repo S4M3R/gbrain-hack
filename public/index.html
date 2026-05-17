@@ -873,13 +873,15 @@ async function toggleLike(btn, slug) {
   btn.classList.toggle('liked', nowLiked);
   const heart = btn.querySelector('svg');
   if (heart) heart.setAttribute('fill', nowLiked ? 'currentColor' : 'none');
+  // Optimistic count update
+  const countEl = document.getElementById(`lc-${slug}`);
+  if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||'0') + (nowLiked ? 1 : -1));
   try {
     const r = await fetch('/api/like', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ slug, liked: nowLiked })
     });
     const data = await r.json();
-    const countEl = document.getElementById(`lc-${slug}`);
     if (countEl) countEl.textContent = data.likes;
   } catch {}
 }
