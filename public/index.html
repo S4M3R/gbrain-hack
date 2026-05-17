@@ -72,12 +72,7 @@ html,body{
   flex:1;min-width:0;
 }
 .search-pill input::placeholder{color:var(--ghost)}
-.search-pill button{
-  background:var(--terra);border:none;color:#fff;
-  width:28px;height:28px;border-radius:9999px;
-  font-size:.85rem;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;
-}
+
 .feed{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 0 96px;}
 .section-head{
   font-family:var(--mono);font-size:.68rem;font-weight:500;
@@ -147,6 +142,20 @@ html,body{
 }
 .tag.active{background:var(--terra-m);color:var(--terra);}
 
+/* ── FEED CONTROLS ── */
+.feed-ctrl-row{
+  display:flex;align-items:center;gap:1px;
+  padding:0 20px 10px;
+}
+.ctrl-txt{
+  background:none;border:none;padding:2px 5px;
+  font-family:var(--mono);font-size:.62rem;letter-spacing:.04em;
+  color:var(--ghost);cursor:pointer;transition:color .15s;
+}
+.ctrl-txt.active{color:var(--terra);}
+.ctrl-dot{color:var(--border);font-size:.7rem;padding:0 1px;user-select:none;}
+.ctrl-pipe{color:var(--border);font-size:.75rem;margin:0 5px;user-select:none;}
+
 /* ── PROFILE SHEET ── */
 .profile-overlay{
   position:fixed;inset:0;z-index:100;
@@ -206,6 +215,15 @@ html,body{
   color:#fff;font-size:.7rem;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
 }
+.profile-avatar-add{
+  width:88px;height:88px;border-radius:9999px;cursor:pointer;
+  background:var(--elevated);border:2.5px dashed var(--border);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;color:var(--ghost);transition:border-color .15s,color .15s;
+}
+.profile-avatar-add:hover,.profile-avatar-add:active{border-color:var(--terra);color:var(--terra);}
+.profile-avatar-add svg{flex-shrink:0;}
+.profile-avatar-add-label{font-family:var(--sans);font-size:.62rem;letter-spacing:.04em;}
 
 /* ── GLASSMORPHISM ── */
 /* Base glass token — warm fog tint + blur */
@@ -229,6 +247,10 @@ html,body{
   overflow:hidden;font-family:var(--mono);font-size:1rem;font-weight:600;
 }
 .fab:active{transform:scale(.93)}
+.fab .fab-icon{transition:opacity .15s,transform .15s;position:absolute;}
+.fab .fab-search{opacity:0;transform:scale(.7);}
+.fab.searching .fab-camera{opacity:0;transform:scale(.7);}
+.fab.searching .fab-search{opacity:1;transform:scale(1);}
 
 /* ── RESULTS ── */
 #results{background:var(--fog)}
@@ -256,7 +278,7 @@ html,body{
   display:flex;flex-direction:column;overflow:hidden;
   border:1px solid var(--border);
   will-change:transform,opacity;
-  touch-action:none;user-select:none;
+  touch-action:pan-y;user-select:none;
   cursor:grab;
 }
 .rcard:active{cursor:grabbing;}
@@ -568,13 +590,18 @@ html,body{
 <div class="profile-overlay" id="profileOverlay">
   <div class="profile-sheet">
     <div class="profile-sheet-title">Your profile</div>
+    <input type="file" id="profilePhotoInput" accept="image/*" style="display:none" onchange="profilePhotoChosen(this)"/>
     <div id="profileAvatarSection" style="display:none;">
-      <div class="profile-avatar-wrap">
+      <div class="profile-avatar-wrap" onclick="document.getElementById('profilePhotoInput').click()" title="Change photo">
         <img class="profile-avatar-img" id="profileSheetImg" alt=""/>
-        <div class="profile-avatar-remove" onclick="profileRemovePhoto()" title="Remove photo">
+        <div class="profile-avatar-remove" onclick="event.stopPropagation();profileRemovePhoto()" title="Remove photo">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
         </div>
       </div>
+    </div>
+    <div id="profileAvatarAdd" class="profile-avatar-add" onclick="document.getElementById('profilePhotoInput').click()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"/></svg>
+      <span class="profile-avatar-add-label">Add photo</span>
     </div>
     <input class="profile-name-input" id="profileName" type="text" placeholder="Your name"
       autocomplete="given-name" oninput="profileCheckReady()"/>
@@ -597,17 +624,32 @@ html,body{
     </div>
   </div>
   <div class="feed" id="feed">
-    <div class="section-head">Friends' Memories</div>
+    <div class="section-head" style="padding-bottom:8px;">Friends' Memories</div>
+    <div class="feed-ctrl-row">
+      <button class="ctrl-txt active" id="chip-likes" onclick="setFeedSort('likes')">♥ likes</button>
+      <span class="ctrl-dot">·</span>
+      <button class="ctrl-txt" id="chip-date" onclick="setFeedSort('date')">newest</button>
+      <span class="ctrl-dot">·</span>
+      <button class="ctrl-txt" id="chip-oldest" onclick="setFeedSort('oldest')">oldest</button>
+      <span class="ctrl-pipe">|</span>
+      <button class="ctrl-txt active" id="chip-all" onclick="setFeedFilter('all')">all</button>
+      <span class="ctrl-dot">·</span>
+      <button class="ctrl-txt" id="chip-mine" onclick="setFeedFilter('mine')">mine</button>
+      <span class="ctrl-dot">·</span>
+      <button class="ctrl-txt" id="chip-friends" onclick="setFeedFilter('friends')">friends</button>
+    </div>
     <div id="feedCards"><div class="loading-state"><div class="spinner"></div></div></div>
   </div>
   <div class="home-bottom">
     <div class="search-pill">
       <input id="searchInput" type="text" placeholder="Ask the group anything…" autocomplete="off"
-        onkeydown="if(event.key==='Enter')doSearch()"/>
-      <button onclick="doSearch()"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg></button>
+        onkeydown="if(event.key==='Enter')doSearch()"
+        oninput="onSearchInput(this)"/>
+
     </div>
-    <button class="fab" id="fab" onclick="openCapture()">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="22" height="22"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"/></svg>
+    <button class="fab" id="fab" onclick="fabAction()">
+      <svg class="fab-icon fab-camera" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="22" height="22"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"/></svg>
+      <svg class="fab-icon fab-search" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" width="22" height="22"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
     </button>
   </div>
 </div>
@@ -763,6 +805,7 @@ function fmtDate(d) {
 let cards=[], cardIdx=0, photoBlob=null;
 let camStream=null, facingMode='user';
 let loc={lat:null,lng:null,text:'Unknown location'};
+let allExps=[], feedSort='likes', feedFilter='all';
 
 function stripMd(text) {
   if (!text) return '';
@@ -847,23 +890,60 @@ function renderFeedCard(exp) {
 async function loadFeed() {
   try {
     const r = await fetch('/api/experiences');
-    const exps = await r.json();
-    const c = document.getElementById('feedCards');
-    c.innerHTML='';
+    allExps = await r.json();
     const countWrap = document.getElementById('loreCountWrap');
     const countEl = document.getElementById('loreCount');
-    if (exps.length) {
-      countEl.textContent = exps.length + (exps.length === 1 ? ' lore' : ' lores');
+    if (allExps.length) {
+      countEl.textContent = allExps.length + (allExps.length === 1 ? ' lore' : ' lores');
       countWrap.style.display = 'flex';
     } else {
       countWrap.style.display = 'none';
     }
-    if (!exps.length) {
-      c.innerHTML='<div class="empty-state">No memories yet.<br/>Be the first.</div>';
-      return;
-    }
-    exps.forEach(e=>c.appendChild(renderFeedCard(e)));
+    renderFeed();
   } catch { document.getElementById('feedCards').innerHTML=''; }
+}
+
+function renderFeed() {
+  const c = document.getElementById('feedCards');
+  c.innerHTML='';
+  const me = (localStorage.getItem('lore_name')||'').toLowerCase().trim();
+  let exps = allExps.slice();
+  if (feedFilter==='mine') {
+    exps = exps.filter(e=>(e.author||'').toLowerCase().trim()===me);
+  } else if (feedFilter==='friends') {
+    exps = exps.filter(e=>(e.author||'').toLowerCase().trim()!==me);
+  }
+  if (feedSort==='date') {
+    exps.sort((a,b)=>b.date.localeCompare(a.date)||b.slug.localeCompare(a.slug));
+  } else if (feedSort==='oldest') {
+    exps.sort((a,b)=>a.date.localeCompare(b.date)||a.slug.localeCompare(b.slug));
+  } else {
+    exps.sort((a,b)=>{
+      const ld=(b.likes||0)-(a.likes||0);
+      return ld!==0?ld:b.date.localeCompare(a.date);
+    });
+  }
+  if (!exps.length) {
+    c.innerHTML='<div class="empty-state">No memories yet.<br/>Be the first.</div>';
+    return;
+  }
+  exps.forEach(e=>c.appendChild(renderFeedCard(e)));
+}
+
+function setFeedSort(s) {
+  feedSort=s;
+  ['likes','date','oldest'].forEach(v=>
+    document.getElementById('chip-'+v).classList.toggle('active',v===s)
+  );
+  renderFeed();
+}
+
+function setFeedFilter(f) {
+  feedFilter=f;
+  ['all','mine','friends'].forEach(v=>
+    document.getElementById('chip-'+v).classList.toggle('active',v===f)
+  );
+  renderFeed();
 }
 
 // ─── LIKES ───────────────────────────────────────────────────────────────────
@@ -874,16 +954,16 @@ async function toggleLike(btn, slug) {
   btn.classList.toggle('liked', nowLiked);
   const heart = btn.querySelector('svg');
   if (heart) heart.setAttribute('fill', nowLiked ? 'currentColor' : 'none');
-  // Optimistic count update
-  const countEl = document.getElementById(`lc-${slug}`);
-  if (countEl) countEl.textContent = Math.max(0, parseInt(countEl.textContent||'0') + (nowLiked ? 1 : -1));
+  // Optimistic count update (both feed card and detail rcard)
+  const countEls = [document.getElementById(`lc-${slug}`), document.getElementById(`lc-rcard-${slug}`)].filter(Boolean);
+  countEls.forEach(el => el.textContent = Math.max(0, parseInt(el.textContent||'0') + (nowLiked ? 1 : -1)));
   try {
     const r = await fetch('/api/like', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ slug, liked: nowLiked })
     });
     const data = await r.json();
-    if (countEl) countEl.textContent = data.likes;
+    countEls.forEach(el => el.textContent = data.likes);
   } catch {}
 }
 
@@ -909,7 +989,7 @@ function showWisdomLoader(stack) {
         <div class="wisdom-ring"></div>
         <div class="wisdom-core">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="white" width="22" height="22">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"/>
           </svg>
         </div>
       </div>
@@ -924,6 +1004,16 @@ function showWisdomLoader(stack) {
     const el=document.getElementById('wisdomPhase');
     if(el){ el.style.animation='none'; el.offsetHeight; el.style.animation=''; el.textContent=phases[pi]; }
   }, 1800);
+}
+
+function onSearchInput(input) {
+  document.getElementById('fab').classList.toggle('searching', input.value.length > 0);
+}
+
+function fabAction() {
+  const fab = document.getElementById('fab');
+  if (fab.classList.contains('searching')) doSearch();
+  else openCapture();
 }
 
 async function doSearch() {
@@ -1020,6 +1110,8 @@ function makeCard(i) {
     }
     else vis=`<div class="exp-rcard-placeholder ${grad}">${getIcon(exp.tags,52)}</div>`;
 
+    const liked=likedSlugs.has(exp.slug);
+    const likeCount=exp.likes||0;
     el.innerHTML=`${vis}
     <div class="exp-rcard-body">
       <div class="exp-rcard-author">
@@ -1030,7 +1122,18 @@ function makeCard(i) {
         </div>
       </div>
       <div class="exp-rcard-title">${esc(exp.title||'Experience')}</div>
-      <div class="exp-rcard-text">${esc(stripMd(exp.body||card.chunk||'').slice(0,400))}</div>
+      <div class="exp-rcard-text">${esc(stripMd(exp.body||card.chunk||''))}</div>
+      <div class="xcard-actions" style="margin-top:16px;">
+        <button class="xcard-action${liked?' liked':''}" data-slug="${esc(exp.slug)}" onclick="toggleLike(this,'${esc(exp.slug)}')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="15" height="15" fill="${liked?'currentColor':'none'}" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"/></svg>
+          <span id="lc-rcard-${esc(exp.slug)}">${likeCount}</span>
+        </button>
+        <div class="xcard-spacer"></div>
+        <button class="xcard-action" onclick="shareLore('${esc(exp.slug)}','${esc(exp.title||'Experience')}','${esc(exp.author||'')}')">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.935-2.186 2.25 2.25 0 0 0-3.935 2.186Z"/></svg>
+          Share
+        </button>
+      </div>
     </div>`;
 
   } else if (card.type==='cta') {
@@ -1076,17 +1179,21 @@ function swipeStart(e){
   const topEl=document.querySelector(`.rcard[data-i="${cardIdx}"]`);
   if(!topEl) return;
   const p=e.touches?e.touches[0]:e;
-  dragState={startX:p.clientX,startY:p.clientY,el:topEl,startTime:Date.now()};
+  dragState={startX:p.clientX,startY:p.clientY,el:topEl,startTime:Date.now(),locked:null};
   topEl.style.transition='none';
 }
 function swipeMove(e){
   if(!dragState) return;
-  if(e.cancelable) e.preventDefault();
   const p=e.touches?e.touches[0]:e;
   const dx=p.clientX-dragState.startX;
-  const dy=(p.clientY-dragState.startY)*0.15;
+  const dy=p.clientY-dragState.startY;
+  if(!dragState.locked&&(Math.abs(dx)>5||Math.abs(dy)>5)){
+    dragState.locked=Math.abs(dx)>Math.abs(dy)?'h':'v';
+  }
+  if(dragState.locked!=='h') return;
+  if(e.cancelable) e.preventDefault();
   const rot=dx*0.04;
-  dragState.el.style.transform=`translateX(${dx}px) translateY(${dy}px) rotate(${rot}deg)`;
+  dragState.el.style.transform=`translateX(${dx}px) translateY(${dy*0.15}px) rotate(${rot}deg)`;
   const progress=Math.min(Math.abs(dx)/(window.innerWidth*0.4),1);
   const nextEl=document.querySelector(`.rcard[data-i="${cardIdx+1}"]`);
   if(nextEl){
@@ -1097,6 +1204,7 @@ function swipeMove(e){
 }
 function swipeEnd(e){
   if(!dragState) return;
+  if(dragState.locked!=='h'){ dragState=null; return; }
   const p=e.changedTouches?e.changedTouches[0]:e;
   const dx=p.clientX-dragState.startX;
   const dt=Date.now()-dragState.startTime;
@@ -1326,20 +1434,39 @@ if (!isMobile()) {
 function openProfileSheet() {
   const avatar = localStorage.getItem('lore_avatar') || '';
   const name = localStorage.getItem('lore_name') || '';
-  const avatarSection = document.getElementById('profileAvatarSection');
-  const avatarImg = document.getElementById('profileSheetImg');
-  if (avatar) {
-    avatarImg.src = avatar;
-    avatarSection.style.display = 'flex';
-    avatarSection.style.justifyContent = 'center';
-  } else {
-    avatarSection.style.display = 'none';
-  }
+  profileSetAvatar(avatar);
   const nameInput = document.getElementById('profileName');
   if (name) nameInput.value = name;
   profileCheckReady();
   document.getElementById('profileOverlay').classList.add('open');
   setTimeout(() => nameInput.focus(), 100);
+}
+
+function profileSetAvatar(dataUrl) {
+  const avatarSection = document.getElementById('profileAvatarSection');
+  const avatarAdd = document.getElementById('profileAvatarAdd');
+  const avatarImg = document.getElementById('profileSheetImg');
+  if (dataUrl) {
+    avatarImg.src = dataUrl;
+    avatarSection.style.display = 'flex';
+    avatarSection.style.justifyContent = 'center';
+    avatarAdd.style.display = 'none';
+  } else {
+    avatarSection.style.display = 'none';
+    avatarAdd.style.display = 'flex';
+  }
+}
+
+function profilePhotoChosen(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    localStorage.setItem('lore_avatar', e.target.result);
+    profileSetAvatar(e.target.result);
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
 }
 
 function closeProfileSheet() {
@@ -1353,7 +1480,7 @@ function profileCheckReady() {
 
 function profileRemovePhoto() {
   localStorage.removeItem('lore_avatar');
-  document.getElementById('profileAvatarSection').style.display = 'none';
+  profileSetAvatar('');
 }
 
 function profileSave() {

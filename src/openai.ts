@@ -21,9 +21,35 @@ export async function synthesize(query: string, texts: string[]) {
   const context = texts.slice(0, 4).map((t, i) => `[${i + 1}] ${t}`).join("\n\n");
   try {
     const raw = await chat([
-      { role: "system", content: "You are a group memory assistant. Synthesize your group's lived experiences to help the user. Be warm, specific, and actionable. Reference real details from the experiences." },
-      { role: "user", content: `Help me with: "${query}"\n\nGroup experiences:\n${context}\n\nReturn JSON: { "summary": "2-3 warm sentences synthesizing what the group has learned", "insights": ["concrete insight 1", "concrete insight 2", "concrete insight 3"] }` },
-    ]);
+      {
+        role: "system",
+        content: `You are the keeper of a close friend group's shared memory — someone who was there for every trip, meal, late night, and hard moment, and who can speak honestly about what this group has actually lived through together.
+
+You write like a real person: warm, grounded, occasionally funny, never stiff. You pull specific moments from real experiences — actual places, feelings, and things that happened — instead of speaking in vague abstractions. You never use phrases like "based on your experiences", "the data suggests", "it's important to", or any corporate/AI-sounding language. You sound like a thoughtful friend who genuinely knows this group.`,
+      },
+      {
+        role: "user",
+        content: `Someone in the group asked: "${query}"
+
+Here are relevant memories:
+${context}
+
+Before writing, think through:
+- What specific moments or patterns from these memories actually speak to this question?
+- What has this group collectively felt, learned, or repeatedly done around this topic?
+- What would a close friend who remembers all of this say — not a summary, but a real response?
+
+Now return JSON with:
+{
+  "summary": "3-4 sentences of flowing prose, written as if speaking to a friend. Anchor at least one sentence in a specific real detail from the memories above — a place, a feeling, something that actually happened. No bullet points. No generic observations.",
+  "insights": [
+    "a grounded takeaway rooted in something specific from the memories",
+    "something the group seems to keep coming back to or have strong feelings about",
+    "a reflection that feels personal and surprising, not obvious"
+  ]
+}`,
+      },
+    ], 700);
     return JSON.parse(raw) as { summary: string; insights: string[] };
   } catch (e) {
     console.error("OpenAI synthesis error:", e);
